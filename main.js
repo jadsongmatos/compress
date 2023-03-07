@@ -1,27 +1,59 @@
-var size = 0;
-var fileInt32Array;
-var fileNInt32Array;
-var inputTensor;
-var outIntArray;
+async function read_file_32b(file) {
+  const buffer = await file.arrayBuffer();
+  let dataview = new DataView(buffer);
+  let reuslt = new Int32Array(Math.ceil(file.size / 4));
+
+  let num1 = 0;
+  let num2 = 0;
+  let num3 = 0;
+  let num4 = 0;
+
+  let tmp = 0;
+  let index = 0;
+
+  for (var i = 0; i < file.size; i = i + 4) {
+    num1 = dataview.getInt8(i);
+    if (i + 1 < file.size) {
+      num2 = dataview.getInt8(i + 1);
+    } else {
+      num2 = 0;
+      num3 = 0;
+      num4 = 0;
+    }
+
+    if (i + 2 < file.size) {
+      num3 = dataview.getInt8(i + 2);
+    } else {
+      num3 = 0;
+      num4 = 0;
+    }
+
+    if (i + 3 < file.size) {
+      num4 = dataview.getInt8(i + 3);
+    } else {
+      num4 = 0;
+    }
+
+    tmp = (num1 << 24) | (num2 << 16) | (num3 << 8) | num4;
+
+    //console.log(tmp, index);
+
+    reuslt[index] = tmp;
+    index++;
+  }
+  return reuslt;
+}
 
 async function inputFile(event) {
   event.preventDefault();
 
   console.log(event.target[0].files[0]);
 
-  let tmpBuffer = await event.target[0].files[0].arrayBuffer();
-  let dataview = new DataView(tmpBuffer);
-  size = tmpBuffer.byteLength / 4;
-
-  outIntArray = new Int32Array(size);
-
-  for (var i = 0; i < outIntArray.length; i++) {
-    outIntArray[i] = dataview.getInt16(i * 4);
-  }
+  const outIntArray = await read_file_32b(event.target[0].files[0]);
 
   console.log(outIntArray);
 
-  let tmpInputT = tf.tensor1d(outIntArray);
+  let tmpInputT = tf.tensor1d(outIntArray, "int32");
   const inputMax = tmpInputT.max();
   const inputMin = tmpInputT.min();
   fileNIntArray = tmpInputT.sub(inputMin).div(inputMax.sub(inputMin));
@@ -111,8 +143,8 @@ async function start() {
   });
 
   console.log("evaluate");
-  result[0].print()
-  result[1].print()
+  result[0].print();
+  result[1].print();
 
   // Run inference with predict().
   m_predict = await model.predict(testOut1);
