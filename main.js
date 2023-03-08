@@ -1,7 +1,20 @@
-async function read_file_32b(file) {
+var inputTensor;
+var model;
+
+function int32_to_float32(value) {
+  const binaryArray = new Int8Array([value[0], value[1], value[2], value[3]]);
+
+  // Create a DataView to access the binary data
+  const dataView = new DataView(binaryArray.buffer);
+
+  // Read the Float32 value at byte offset 0
+  return dataView.getFloat32(0);
+}
+
+async function read_file_f32(file) {
   const buffer = await file.arrayBuffer();
   let dataview = new DataView(buffer);
-  let reuslt = new Int32Array(Math.ceil(file.size / 4));
+  let reuslt = new Float32Array(Math.ceil(file.size / 4));
 
   let num1 = 0;
   let num2 = 0;
@@ -34,11 +47,11 @@ async function read_file_32b(file) {
       num4 = 0;
     }
 
-    tmp = (num1 << 24) | (num2 << 16) | (num3 << 8) | num4;
+    //tmp = (num1 << 24) | (num2 << 16) | (num3 << 8) | num4; // int8 to int32
 
     //console.log(tmp, index);
 
-    reuslt[index] = tmp;
+    reuslt[index] = int32_to_float32([num1, num2, num3, num4]);
     index++;
   }
   return reuslt;
@@ -49,11 +62,25 @@ async function inputFile(event) {
 
   console.log(event.target[0].files[0]);
 
-  const outIntArray = await read_file_32b(event.target[0].files[0]);
+  inputTensor = await read_file_f32(event.target[0].files[0]);
+  const size = inputTensor.length;
+  console.log(inputTensor);
 
-  console.log(outIntArray);
+  const input = tf.layers.dense({
+    units: Math.round(size / 2),
+    activation: "tanh",
+    inputShape: [size],
+  });
+  const out = tf.layers.dense({ units: size }).apply(input);
 
-  let tmpInputT = tf.tensor1d(outIntArray, "int32");
+  model = tf.model({ inputs: input, outputs: out });
+  model.summary();
+  tfvis.show.modelSummary(surface, model);
+
+  inputTensor = tf.tensor1d(inputTensor, "float32");
+
+  /*
+  let tmpInputT = tf.tensor1d(outIntArray, "float32");
   const inputMax = tmpInputT.max();
   const inputMin = tmpInputT.min();
   fileNIntArray = tmpInputT.sub(inputMin).div(inputMax.sub(inputMin));
@@ -64,19 +91,20 @@ async function inputFile(event) {
   //let tmpData = tf.data.array(await fileNIntArray.array()).batch(2);
   //console.log(tmpData);
 
-  /*
-  let out2Tensor = tf.data
-    .array(tf.zeros([Math.ceil(size / 2)], "int32").arraySync())
-    .batch(1);
-  */
+
+  //let out2Tensor = tf.data
+  //  .array(tf.zeros([Math.ceil(size / 2)], "int32").arraySync())
+  //  .batch(1);
+
 
   //inputTensor = tf.data.zip({ xs: tmpData, ys: tmpData });
   inputTensor = fileNIntArray.reshape([Math.round(size / 2), 2]);
 
-  start();
+  start();*/
 }
 
 document.getElementsByTagName("form")[0].addEventListener("submit", inputFile);
+document.querySelector("#train").addEventListener("click", start);
 //--------------
 
 const float_MaxValue = 1; //Math.pow(2, 112)//3.4028235e38;//65500.0
@@ -84,17 +112,6 @@ const float_MinValue = -1; //-Math.pow(2,112)//-3.4028235e38;//-65500.0
 const train = 0.01;
 
 const surface = { name: "show.history live", tab: "Training" };
-
-const input = tf.input({ shape: [2] });
-const dense0 = tf.layers.dense({ units: 2 }).apply(input);
-const dense1 = tf.layers.dense({ units: 2 }).apply(dense0);
-const dense2 = tf.layers.dense({ units: 1 }).apply(dense1);
-const dense3 = tf.layers.dense({ units: 2 }).apply(dense2);
-const dense4 = tf.layers.dense({ units: 2 }).apply(dense3);
-
-const model = tf.model({ inputs: input, outputs: dense4 });
-model.summary();
-tfvis.show.modelSummary(surface, model);
 
 var m_predict;
 var m_evaluate;
@@ -123,7 +140,7 @@ async function start() {
   // Train model with fit().
   //await model.fitDataset(inputTensor, {
   await model.fit(inputTensor, inputTensor, {
-    batchSize: Math.round(size / 2),
+    batchSize: inputTensor.length,
     epochs: 128,
     //shuffle: true,
     //validationData: validation_data,
@@ -173,4 +190,4 @@ async function start() {
 }
 
 // Create a basic regression model
-tf.setBackend("wasm");
+//tf.setBackend("wasm");
