@@ -1,5 +1,11 @@
 var inputTensor;
+var inputTest = [];
 var model;
+var max = Number.MIN_VALUE;
+var min = Number.MAX_VALUE;
+
+var inputMax = 0;
+var inputMin = 0;
 
 function int32_to_float32(value) {
   const binaryArray = new Int8Array([value[0], value[1], value[2], value[3]]);
@@ -21,8 +27,10 @@ async function read_file_f32(file) {
   let num3 = 0;
   let num4 = 0;
 
-  let tmp = 0;
   let index = 0;
+  let tmp = 0;
+  max = Number.MIN_VALUE;
+  min = Number.MAX_VALUE;
 
   for (var i = 0; i < file.size; i = i + 4) {
     num1 = dataview.getInt8(i);
@@ -50,6 +58,13 @@ async function read_file_f32(file) {
     //tmp = (num1 << 24) | (num2 << 16) | (num3 << 8) | num4; // int8 to int32
 
     //console.log(tmp, index);
+    tmp = int32_to_float32([num1, num2, num3, num4]);
+    if (tmp >= max) {
+      max = tmp;
+    }
+    if (tmp <= min) {
+      min = tmp;
+    }
 
     reuslt[index] = int32_to_float32([num1, num2, num3, num4]);
     index++;
@@ -63,50 +78,46 @@ async function inputFile(event) {
   console.log(event.target[0].files[0]);
 
   inputTensor = await read_file_f32(event.target[0].files[0]);
+
+  for (let index = 0; index < inputTensor.length && index < 10; index++) {
+    inputTest.push(inputTensor[index]);
+  }
+
+  console.log("MAX", max, "MIN", min);
   const size = inputTensor.length;
   console.log("read_file_f32", inputTensor, size);
 
   const input = tf.input({ shape: [size] });
 
-  const dense = tf.layers
+  const compress = tf.layers
     .dense({
       units: Math.round(size / 2),
-      activation: "tanh",
+      activation: "sigmoid",
     })
     .apply(input);
 
-  const out = tf.layers.dense({ units: size }).apply(dense);
+  const out = tf.layers.dense({ units: size }).apply(compress);
 
   model = tf.model({ inputs: input, outputs: out });
   model.summary();
   tfvis.show.modelSummary(surface, model);
 
   inputTensor = tf.tensor1d(inputTensor, "float32");
-  //inputTensor = inputTensor.reshape([1,size])
+  //inputTensor = inputTensor.reshape([1, size]);
   console.log("inputTensor", inputTensor);
 
-
-  const inputMax = inputTensor.max();
-  const inputMin = inputTensor.min();
-  console.log("max", inputMax.print(), "min", inputMin.print());
+  inputMax = inputTensor.max();
+  inputMin = inputTensor.min();
+  console.log("inputMax");
+  inputMax.print();
+  console.log("inputMin");
+  inputMin.print();
   const fileNIntArray = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
 
   console.log(fileNIntArray.print());
   console.log(fileNIntArray.max().print(), fileNIntArray.min().print());
 
-  inputTensor = fileNIntArray.reshape([1,size])
-
-  //let tmpData = tf.data.array(await fileNIntArray.array()).batch(2);
-  //console.log(tmpData);
-
-  //let out2Tensor = tf.data
-  //  .array(tf.zeros([Math.ceil(size / 2)], "int32").arraySync())
-  //  .batch(1);
-
-  //inputTensor = tf.data.zip({ xs: tmpData, ys: tmpData });
-  //inputTensor = fileNIntArray.reshape([Math.round(size / 2), 2]);
-
-  start();
+  inputTensor = fileNIntArray.reshape([1, size]);
 }
 
 document.getElementsByTagName("form")[0].addEventListener("submit", inputFile);
@@ -122,13 +133,8 @@ const surface = { name: "show.history live", tab: "Training" };
 var m_predict;
 var m_evaluate;
 
-var history_train = [];
-
-const testOut1 = tf.tensor2d([
-  [3, 4],
-  [7, 9],
-  [-128, -1808],
-]);
+var history_train = new Array(256).fill(0);
+var history_i = 0;
 
 // Build and compile model.
 async function start() {
@@ -147,22 +153,24 @@ async function start() {
   //await model.fitDataset(inputTensor, {
   await model.fit(inputTensor, inputTensor, {
     batchSize: 1, //inputTensor.size,
-    epochs: 128,
+    epochs: 1024,
+    learningRate: 0.0000000000000001,
     //shuffle: true,
     //validationData: validation_data,
     callbacks: {
       onEpochEnd: async (epoch, log) => {
-        history_train.push(log);
+        history_train[history_i % 256] = log;
         console.log("Epoch: " + epoch + " Loss: " + log.loss);
         tfvis.show.history(surface, history_train, ["loss", "acc"]);
+        history_i++;
       },
     },
   });
 
   model.summary();
 
-  result = await model.evaluate(testOut1, testOut1, {
-    batchSize: 3,
+  result = await model.evaluate(inputTensor, inputTensor, {
+    batchSize: 1,
   });
 
   console.log("evaluate");
@@ -170,26 +178,39 @@ async function start() {
   result[1].print();
 
   // Run inference with predict().
-  m_predict = await model.predict(testOut1);
+  m_predict = await model.predict(inputTensor);
   console.log("predict", m_predict);
-  m_predict[0].print();
-  m_predict[1].print();
+  m_predict.print();
 
-  const predictedPoints = m_predict[0].arraySync().map((val, i) => {
-    return { x: val[0], y: val[1] };
-  });
+  const m_predict_rev = m_predict.mul(inputMax.sub(inputMin)).add(inputMin);
+
+  const predictedPoints = m_predict_rev.arraySync();
+
+  let xPredic = [];
+  let yPredic = [];
+
+  for (
+    let index = 0;
+    index < predictedPoints[0].length && index < 10;
+    index++
+  ) {
+    xPredic.push({
+      x: predictedPoints[0][index],
+      y: predictedPoints[0][index],
+    });
+
+    yPredic.push({
+      x: inputTest[index],
+      y: inputTest[index],
+    });
+  }
+
+  console.log("difPredic", xPredic, yPredic);
 
   tfvis.render.scatterplot(
     { name: "Model Predictions vs Original Data" },
     {
-      values: [
-        [
-          { x: 3, y: 4 },
-          { x: 7, y: 9 },
-          { x: -128, y: -1808 },
-        ],
-        predictedPoints,
-      ],
+      values: [xPredic, yPredic],
       series: ["original", "predicted"],
     }
   );
