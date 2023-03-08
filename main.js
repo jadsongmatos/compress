@@ -72,6 +72,14 @@ async function read_file_f32(file) {
   return reuslt;
 }
 
+function binaryCrossentropyLoss(yTrue, yPred) {
+  // Compute binary cross-entropy loss between yTrue and yPred
+  const loss = tf.losses.logLoss(yTrue, yPred);
+  
+  // Return the loss as a scalar value
+  return loss.mean();
+}
+
 async function inputFile(event) {
   event.preventDefault();
 
@@ -91,12 +99,12 @@ async function inputFile(event) {
 
   const compress = tf.layers
     .dense({
-      units: Math.round(size / 2),
-      activation: "sigmoid",
+      units: Math.round(size /1),
+      activation: "relu",
     })
     .apply(input);
 
-  const out = tf.layers.dense({ units: size }).apply(compress);
+  const out = tf.layers.dense({ units: size, activation: "sigmoid" }).apply(compress);
 
   model = tf.model({ inputs: input, outputs: out });
   model.summary();
@@ -126,7 +134,7 @@ document.querySelector("#train").addEventListener("click", start);
 
 const float_MaxValue = 1; //Math.pow(2, 112)//3.4028235e38;//65500.0
 const float_MinValue = -1; //-Math.pow(2,112)//-3.4028235e38;//-65500.0
-const train = 0.01;
+var train = 0.01//1.40129846432e-45
 
 const surface = { name: "show.history live", tab: "Training" };
 
@@ -144,17 +152,17 @@ async function start() {
   //meanSquaredError / meanAbsoluteError
   //0.000001
   model.compile({
-    optimizer: tf.train.adam(train),
-    loss: "meanSquaredError",
+    optimizer: 'adam',
+    loss: 'meanSquaredError',
     metrics: ["acc"],
   });
 
   // Train model with fit().
   //await model.fitDataset(inputTensor, {
   await model.fit(inputTensor, inputTensor, {
-    batchSize: 1, //inputTensor.size,
-    epochs: 1024,
-    learningRate: 1.40129846432e-45,
+    batchSize: inputTensor.size,
+    epochs: 99999999,
+    //learningRate: 1.40129846432e-45,
     //shuffle: true,
     //validationData: validation_data,
     callbacks: {
