@@ -64,43 +64,49 @@ async function inputFile(event) {
 
   inputTensor = await read_file_f32(event.target[0].files[0]);
   const size = inputTensor.length;
-  console.log(inputTensor);
+  console.log("read_file_f32", inputTensor, size);
 
-  const input = tf.layers.dense({
-    units: Math.round(size / 2),
-    activation: "tanh",
-    inputShape: [size],
-  });
-  const out = tf.layers.dense({ units: size }).apply(input);
+  const input = tf.input({ shape: [size] });
+
+  const dense = tf.layers
+    .dense({
+      units: Math.round(size / 2),
+      activation: "tanh",
+    })
+    .apply(input);
+
+  const out = tf.layers.dense({ units: size }).apply(dense);
 
   model = tf.model({ inputs: input, outputs: out });
   model.summary();
   tfvis.show.modelSummary(surface, model);
 
   inputTensor = tf.tensor1d(inputTensor, "float32");
+  //inputTensor = inputTensor.reshape([1,size])
+  console.log("inputTensor", inputTensor);
 
-  /*
-  let tmpInputT = tf.tensor1d(outIntArray, "float32");
-  const inputMax = tmpInputT.max();
-  const inputMin = tmpInputT.min();
-  fileNIntArray = tmpInputT.sub(inputMin).div(inputMax.sub(inputMin));
+
+  const inputMax = inputTensor.max();
+  const inputMin = inputTensor.min();
+  console.log("max", inputMax.print(), "min", inputMin.print());
+  const fileNIntArray = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
 
   console.log(fileNIntArray.print());
   console.log(fileNIntArray.max().print(), fileNIntArray.min().print());
 
+  inputTensor = fileNIntArray.reshape([1,size])
+
   //let tmpData = tf.data.array(await fileNIntArray.array()).batch(2);
   //console.log(tmpData);
-
 
   //let out2Tensor = tf.data
   //  .array(tf.zeros([Math.ceil(size / 2)], "int32").arraySync())
   //  .batch(1);
 
-
   //inputTensor = tf.data.zip({ xs: tmpData, ys: tmpData });
-  inputTensor = fileNIntArray.reshape([Math.round(size / 2), 2]);
+  //inputTensor = fileNIntArray.reshape([Math.round(size / 2), 2]);
 
-  start();*/
+  start();
 }
 
 document.getElementsByTagName("form")[0].addEventListener("submit", inputFile);
@@ -140,7 +146,7 @@ async function start() {
   // Train model with fit().
   //await model.fitDataset(inputTensor, {
   await model.fit(inputTensor, inputTensor, {
-    batchSize: inputTensor.length,
+    batchSize: 1, //inputTensor.size,
     epochs: 128,
     //shuffle: true,
     //validationData: validation_data,
