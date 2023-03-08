@@ -154,7 +154,7 @@ async function start() {
   await model.fit(inputTensor, inputTensor, {
     batchSize: 1, //inputTensor.size,
     epochs: 1024,
-    learningRate: 0.0000000000000001,
+    learningRate: 1.40129846432e-45,
     //shuffle: true,
     //validationData: validation_data,
     callbacks: {
