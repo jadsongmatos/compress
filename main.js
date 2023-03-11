@@ -17,6 +17,32 @@ function int32_to_float32(value) {
   return dataView.getFloat32(0);
 }
 
+function float32ToInt8(floatValue) {
+  let intArray = new Int8Array(4);
+
+  for (var i = 0; i < 4; i++) {
+    intArray[i] = floatValue >> 2;
+  }
+
+  return intArray;
+}
+
+function arrayFloat32_to_ArrayInt(array) {
+  let reuslt = new Array(array.length * 4).fill(0);
+  let tmp;
+  let index = 0;
+  for (let i = 0; i < array.length; i++) {
+    tmp = float32ToInt8(array[i]);
+    reuslt[index] = tmp[0];
+    reuslt[index + 1] = tmp[1];
+    reuslt[index + 2] = tmp[2];
+    reuslt[index + 3] = tmp[3];
+    index = index + 4;
+  }
+
+  return reuslt;
+}
+
 async function read_file_f32(file) {
   const buffer = await file.arrayBuffer();
   let dataview = new DataView(buffer);
@@ -75,9 +101,30 @@ async function read_file_f32(file) {
 function binaryCrossentropyLoss(yTrue, yPred) {
   // Compute binary cross-entropy loss between yTrue and yPred
   const loss = tf.losses.logLoss(yTrue, yPred);
-  
+
   // Return the loss as a scalar value
   return loss.mean();
+}
+
+function customLoss(yTrue, yPred) {
+  const input  = yPred.arraySync()
+  const yPred8 = arrayFloat32_to_ArrayInt(yPred.arraySync()[0]);
+  console.log("yPred8", yPred8);
+  // Clipping to prevent NaN and Inf values
+  //yPred = tf.clipByValue(yPred, 1e-7, 1 - 1e-7);
+  //yPred = tf.clipByValue(yPred, min, max);
+
+  // Compute binary cross-entropy loss
+  const bceLoss = tf.metrics.binaryCrossentropy(yTrue, yPred);
+
+  // Compute L1L2 regularization penalty on model weights
+  const regularization = tf.regularizers.l1l2({ l1: 0.01, l2: 0.01 });
+  const regLoss = regularization.apply(model.trainableWeights);
+
+  // Compute total loss as sum of binary cross-entropy loss and weight penalty
+  const totalLoss = bceLoss.add(regLoss);
+
+  return totalLoss;
 }
 
 async function inputFile(event) {
@@ -95,23 +142,41 @@ async function inputFile(event) {
   const size = inputTensor.length;
   console.log("read_file_f32", inputTensor, size);
 
-  const input = tf.input({ shape: [size] });
+  const input = tf.input({ shape: [size], dtype: "float32" });
 
   const compress = tf.layers
     .dense({
-      units: Math.round(size /1),
-      activation: "relu",
+      units: Math.round(size),
+      //activation: "relu",
+      dtype: "float32",
+      //useBias: true,
     })
     .apply(input);
 
-  const out = tf.layers.dense({ units: size, activation: "sigmoid" }).apply(compress);
+  const compress2 = tf.layers
+    .dense({
+      units: Math.round(size),
+      //activation: "relu",
+      dtype: "float32",
+      //useBias: true,
+    })
+    .apply(compress);
+
+  const out = tf.layers
+    .dense({
+      units: size,
+      //activation: "linear",
+      dtype: "float32",
+      //useBias: true,
+    })
+    .apply(compress2);
 
   model = tf.model({ inputs: input, outputs: out });
   model.summary();
   tfvis.show.modelSummary(surface, model);
 
   inputTensor = tf.tensor1d(inputTensor, "float32");
-  //inputTensor = inputTensor.reshape([1, size]);
+  inputTensor = inputTensor.reshape([1, size]);
   console.log("inputTensor", inputTensor);
 
   inputMax = inputTensor.max();
@@ -120,12 +185,13 @@ async function inputFile(event) {
   inputMax.print();
   console.log("inputMin");
   inputMin.print();
-  const fileNIntArray = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
+
+  /*const fileNIntArray = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
 
   console.log(fileNIntArray.print());
   console.log(fileNIntArray.max().print(), fileNIntArray.min().print());
 
-  inputTensor = fileNIntArray.reshape([1, size]);
+  inputTensor = fileNIntArray.reshape([1, size]);*/
 }
 
 document.getElementsByTagName("form")[0].addEventListener("submit", inputFile);
@@ -134,7 +200,7 @@ document.querySelector("#train").addEventListener("click", start);
 
 const float_MaxValue = 1; //Math.pow(2, 112)//3.4028235e38;//65500.0
 const float_MinValue = -1; //-Math.pow(2,112)//-3.4028235e38;//-65500.0
-var train = 0.01//1.40129846432e-45
+var train = 0.01; //1.40129846432e-45
 
 const surface = { name: "show.history live", tab: "Training" };
 
@@ -151,17 +217,20 @@ async function start() {
   //adam / sgd / rmsprop / adamax
   //meanSquaredError / meanAbsoluteError
   //0.000001
+
   model.compile({
-    optimizer: 'adam',
-    loss: 'meanSquaredError',
+    optimizer: tf.train.adam(),
+    // Just pass through rate and distortion as losses/metrics.
+    loss: customLoss, //"meanSquaredError",//"categoricalCrossentropy",
+    //metrics: pass_through_loss,
     metrics: ["acc"],
   });
 
   // Train model with fit().
   //await model.fitDataset(inputTensor, {
   await model.fit(inputTensor, inputTensor, {
-    batchSize: inputTensor.size,
-    epochs: 99999999,
+    batchSize: 1,
+    epochs: 256,
     //learningRate: 1.40129846432e-45,
     //shuffle: true,
     //validationData: validation_data,
