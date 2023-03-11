@@ -162,7 +162,7 @@ async function inputFile(event) {
   const units = Math.round(size / 64);
   const compress = tf.layers
     .dense({
-      units: 1,//units <= 0 ? 1 : units,
+      units: 1, //units <= 0 ? 1 : units,
       //activation: "relu",
       //dtype: "float32",
       //useBias: true,
