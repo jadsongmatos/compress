@@ -98,6 +98,17 @@ async function read_file_f32(file) {
   return reuslt;
 }
 
+async function read_file_int16(file) {
+  const buffer = await file.arrayBuffer();
+  let buffer16 = new Int16Array(buffer);
+  let reuslt = new Float32Array(buffer.byteLength / 2);
+
+  for (let i = 0; i < buffer16.length; i++) {
+    reuslt[i] = buffer16[i];
+  }
+  return reuslt;
+}
+
 function binaryCrossentropyLoss(yTrue, yPred) {
   // Compute binary cross-entropy loss between yTrue and yPred
   const loss = tf.losses.logLoss(yTrue, yPred);
@@ -107,7 +118,7 @@ function binaryCrossentropyLoss(yTrue, yPred) {
 }
 
 function customLoss(yTrue, yPred) {
-  const input  = yPred.arraySync()
+  const input = yPred.arraySync();
   const yPred8 = arrayFloat32_to_ArrayInt(yPred.arraySync()[0]);
   console.log("yPred8", yPred8);
   // Clipping to prevent NaN and Inf values
@@ -132,7 +143,8 @@ async function inputFile(event) {
 
   console.log(event.target[0].files[0]);
 
-  inputTensor = await read_file_f32(event.target[0].files[0]);
+  //inputTensor = await read_file_f32(event.target[0].files[0]);
+  inputTensor = await read_file_int16(event.target[0].files[0]);
 
   for (let index = 0; index < inputTensor.length && index < 10; index++) {
     inputTest.push(inputTensor[index]);
@@ -140,42 +152,37 @@ async function inputFile(event) {
 
   console.log("MAX", max, "MIN", min);
   const size = inputTensor.length;
-  console.log("read_file_f32", inputTensor, size);
+  console.log("read_file_int16", inputTensor, size);
 
-  const input = tf.input({ shape: [size], dtype: "float32" });
+  const input = tf.input({
+    shape: [size],
+    /// dtype: "string"
+  });
 
+  const units = Math.round(size / 64);
   const compress = tf.layers
     .dense({
-      units: Math.round(size),
+      units: 1,//units <= 0 ? 1 : units,
       //activation: "relu",
-      dtype: "float32",
+      //dtype: "float32",
       //useBias: true,
     })
     .apply(input);
-
-  const compress2 = tf.layers
-    .dense({
-      units: Math.round(size),
-      //activation: "relu",
-      dtype: "float32",
-      //useBias: true,
-    })
-    .apply(compress);
 
   const out = tf.layers
     .dense({
       units: size,
       //activation: "linear",
-      dtype: "float32",
+      //dtype: "int32",
       //useBias: true,
     })
-    .apply(compress2);
+    .apply(compress);
 
   model = tf.model({ inputs: input, outputs: out });
   model.summary();
   tfvis.show.modelSummary(surface, model);
 
-  inputTensor = tf.tensor1d(inputTensor, "float32");
+  inputTensor = tf.tensor1d(inputTensor);
   inputTensor = inputTensor.reshape([1, size]);
   console.log("inputTensor", inputTensor);
 
@@ -221,7 +228,7 @@ async function start() {
   model.compile({
     optimizer: tf.train.adam(),
     // Just pass through rate and distortion as losses/metrics.
-    loss: customLoss, //"meanSquaredError",//"categoricalCrossentropy",
+    loss: "meanSquaredError", //"binaryCrossentropy", //customLoss, //"meanSquaredError",//"categoricalCrossentropy",
     //metrics: pass_through_loss,
     metrics: ["acc"],
   });
@@ -230,7 +237,7 @@ async function start() {
   //await model.fitDataset(inputTensor, {
   await model.fit(inputTensor, inputTensor, {
     batchSize: 1,
-    epochs: 256,
+    epochs: 1024,
     //learningRate: 1.40129846432e-45,
     //shuffle: true,
     //validationData: validation_data,
@@ -259,9 +266,9 @@ async function start() {
   console.log("predict", m_predict);
   m_predict.print();
 
-  const m_predict_rev = m_predict.mul(inputMax.sub(inputMin)).add(inputMin);
+  //const m_predict_rev = m_predict.mul(inputMax.sub(inputMin)).add(inputMin);
 
-  const predictedPoints = m_predict_rev.arraySync();
+  const predictedPoints = m_predict.arraySync();
 
   let xPredic = [];
   let yPredic = [];
